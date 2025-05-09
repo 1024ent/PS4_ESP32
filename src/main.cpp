@@ -36,9 +36,21 @@ JOYSTICK TABLE
 #define CONTROLLER_1 "14:2b:2f:c0:28:fe"
 #define CONTROLLER_2 ""
 
+/** THREAD INDICATOR **/
+#define BLINK_GPIO1 GPIO_NUM_2
+
+TaskHandle_t myControllerLed = NULL;
 TaskHandle_t task1 = NULL;
 TaskHandle_t task2 = NULL;
 
+int r = 255;
+int g = 0;
+int b = 0;
+
+void nextRainbowColor();
+
+void controller_led_sequence(void *pvParameters);
+void thread_indicator(void *pvParameters);
 void task_1(void *pvParameters);
 void task_2(void *pvParameters);
 
@@ -51,6 +63,10 @@ void setup() {
     while (1);  // halt if controller not found
   }
   Serial.println("PS4 Controller found");
+
+  /** THREAD INDICATOR **/
+  gpio_pad_select_gpio(BLINK_GPIO1);
+  gpio_set_direction(BLINK_GPIO1, GPIO_MODE_OUTPUT);
 
   xTaskCreatePinnedToCore(task_1, 
                           "Running Task 1", 
@@ -67,6 +83,15 @@ void setup() {
                           2, 
                           &task2, 
                           1);  
+
+  // Task for blinking an LED to indicate system status 
+  xTaskCreatePinnedToCore(controller_led_sequence, 
+                          "Managing controller led sequence", 
+                          4096, 
+                          NULL, 
+                          1, 
+                          &myControllerLed, 
+                          0);
 }
 
 void loop() {
@@ -119,3 +144,57 @@ void task_2(void *pvParameters) {
   }
 }
 
+/**
+ * @brief Continuously sending commands to PS4 for LED sequence
+ */
+void controller_led_sequence(void *pvParameters) {
+  const TickType_t delayTime = pdMS_TO_TICKS(100); // Convert ms to ticks
+
+  for (;;)
+  {
+      PS4.setLed(r, g, b);
+      nextRainbowColor();
+      PS4.setFlashRate(0, 0);
+      PS4.sendToController();
+
+      vTaskDelay(delayTime); // Non-blocking delay
+  }
+}
+
+/**
+ * @brief Calculating next rainbow PS4 LED sequence
+ */
+void nextRainbowColor() {
+  int increment = 5;
+
+  if (r > 0 && b == 0)
+  {
+      r -= increment;
+      g += increment;
+  }
+  if (g > 0 && r == 0)
+  {
+      g -= increment;
+      b += increment;
+  }
+  if (b > 0 && g == 0)
+  {
+      r += increment;
+      b -= increment;
+  }
+}
+
+/**
+ * @brief Blinking LED1 as a thread indicator and PCB is working
+ * @return PCB LED1 blinking
+ */
+void thread_indicator(void *pvParameters)
+{
+    for (;;)
+    {
+        gpio_set_level(BLINK_GPIO1, 0);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+        gpio_set_level(BLINK_GPIO1, 1);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
